@@ -134,6 +134,7 @@ def _install_global_timeout(timeout_seconds: int):
         timer.start()
 
 from lib import (
+    ask_search,
     bluesky,
     truthsocial,
     dates,
@@ -612,7 +613,7 @@ def _search_web(
 ) -> tuple:
     """Search the web via native API backend (runs in thread).
 
-    Uses the best available backend: opencli > Parallel AI > Brave > OpenRouter.
+    Uses the best available backend: opencli > ask-search > Parallel AI > Brave > OpenRouter.
 
     Returns:
         Tuple of (web_items, web_error)
@@ -625,6 +626,8 @@ def _search_web(
         return [], "No web search API keys configured"
 
     candidates = [backend]
+    if ask_search.is_ask_search_available(config.get("ASK_SEARCH_CMD")) and "ask-search" not in candidates:
+        candidates.append("ask-search")
     if config.get("PARALLEL_API_KEY") and "parallel" not in candidates:
         candidates.append("parallel")
     if config.get("BRAVE_API_KEY") and "brave" not in candidates:
@@ -640,6 +643,10 @@ def _search_web(
             if candidate == "opencli":
                 raw_results = opencli.search_web(
                     topic, from_date, to_date, depth=depth, command=config.get("OPENCLI_CMD"),
+                ).get("items", [])
+            elif candidate == "ask-search":
+                raw_results = ask_search.search_web(
+                    topic, from_date, to_date, depth=depth, command=config.get("ASK_SEARCH_CMD"),
                 ).get("items", [])
             elif candidate == "parallel":
                 raw_results = parallel_search.search_web(

@@ -250,6 +250,7 @@ def get_config() -> Dict[str, Any]:
         ('PARALLEL_API_KEY', None),
         ('BRAVE_API_KEY', None),
         ('OPENCLI_CMD', None),
+        ('ASK_SEARCH_CMD', None),
         ('XIAOHONGSHU_API_BASE', None),
         ('GEMINI_MODEL', None),
         ('OPENAI_MODEL_POLICY', 'auto'),
@@ -334,9 +335,11 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 def has_web_search_keys(config: Dict[str, Any]) -> bool:
     """Check if any web search API keys are configured."""
     from . import opencli
+    from . import ask_search
 
     return bool(
         opencli.is_opencli_available(config.get('OPENCLI_CMD'))
+        or ask_search.is_ask_search_available(config.get('ASK_SEARCH_CMD'))
         or config.get('OPENROUTER_API_KEY')
         or config.get('PARALLEL_API_KEY')
         or config.get('BRAVE_API_KEY')
@@ -346,14 +349,17 @@ def has_web_search_keys(config: Dict[str, Any]) -> bool:
 def get_web_search_source(config: Dict[str, Any]) -> Optional[str]:
     """Determine the best available web search backend.
 
-    Priority: opencli > Parallel AI > Brave > OpenRouter/Sonar Pro
+    Priority: opencli > ask-search > Parallel AI > Brave > OpenRouter/Sonar Pro
 
-    Returns: 'opencli', 'parallel', 'brave', 'openrouter', or None
+    Returns: 'opencli', 'ask-search', 'parallel', 'brave', 'openrouter', or None
     """
     from . import opencli
+    from . import ask_search
 
     if opencli.is_opencli_available(config.get('OPENCLI_CMD')):
         return 'opencli'
+    if ask_search.is_ask_search_available(config.get('ASK_SEARCH_CMD')):
+        return 'ask-search'
     if config.get('PARALLEL_API_KEY'):
         return 'parallel'
     if config.get('BRAVE_API_KEY'):

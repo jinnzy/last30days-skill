@@ -232,6 +232,7 @@ class TestXSourceSelection(unittest.TestCase):
     def test_get_web_search_source_prefers_opencli(self):
         config = {
             'OPENCLI_CMD': 'opencli',
+            'ASK_SEARCH_CMD': 'ask-search',
             'PARALLEL_API_KEY': 'parallel',
             'BRAVE_API_KEY': 'brave',
             'OPENROUTER_API_KEY': 'openrouter',
@@ -239,6 +240,17 @@ class TestXSourceSelection(unittest.TestCase):
 
         with patch('lib.opencli.is_opencli_available', return_value=True):
             self.assertEqual(env.get_web_search_source(config), 'opencli')
+
+    def test_get_web_search_source_uses_ask_search_before_api_backends(self):
+        config = {
+            'ASK_SEARCH_CMD': 'ask-search',
+            'PARALLEL_API_KEY': 'parallel',
+            'BRAVE_API_KEY': 'brave',
+        }
+
+        with patch('lib.opencli.is_opencli_available', return_value=False), \
+             patch('lib.ask_search.is_ask_search_available', return_value=True):
+            self.assertEqual(env.get_web_search_source(config), 'ask-search')
 
 
 if __name__ == "__main__":
