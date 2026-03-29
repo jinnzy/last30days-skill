@@ -735,6 +735,7 @@ def _run_supplemental(
     to_date: str,
     depth: str,
     x_source: str,
+    config: dict = None,
     progress: ui.ProgressDisplay = None,
     skip_reddit: bool = False,
     resolved_handle: str = None,
@@ -1427,7 +1428,8 @@ def run_research(
     if depth != "quick" and not mock and (reddit_items or x_items):
         sup_reddit, sup_x = _run_supplemental(
             topic, reddit_items, x_items,
-            from_date, to_date, depth, x_source, progress,
+            from_date, to_date, depth, x_source, config,
+            progress,
             skip_reddit=(rate_limited or reddit_used_sc),
             resolved_handle=resolved_handle,
         )
