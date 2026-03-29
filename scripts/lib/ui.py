@@ -422,8 +422,8 @@ def show_diagnostic_banner(diag: dict):
 
     Args:
         diag: Dict from env diagnostics with keys:
-            openai, xai, x_source, bird_installed, bird_authenticated,
-            bird_username, youtube, web_search_backend
+            openai, xai, x_source, opencli_available, opencli_command,
+            youtube, web_search_backend
     """
     has_openai = diag.get("openai", False)
     has_reddit_public = diag.get("reddit_public", False)
@@ -461,10 +461,10 @@ def show_diagnostic_banner(diag: dict):
             lines.append(f"{Colors.DIM}│{Colors.RESET}  {Colors.GREEN}✅ X/Twitter{Colors.RESET} — {label}                          {Colors.DIM}│{Colors.RESET}")
         else:
             lines.append(f"{Colors.DIM}│{Colors.RESET}  {Colors.RED}❌ X/Twitter{Colors.RESET} — No X auth or fallback key        {Colors.DIM}│{Colors.RESET}")
-            if diag.get("bird_installed"):
-                lines.append(f"{Colors.DIM}│{Colors.RESET}     └─ Add AUTH_TOKEN/CT0 or XAI_API_KEY      {Colors.DIM}│{Colors.RESET}")
+            if diag.get("opencli_available"):
+                lines.append(f"{Colors.DIM}│{Colors.RESET}     └─ Check opencli doctor + browser login   {Colors.DIM}│{Colors.RESET}")
             else:
-                lines.append(f"{Colors.DIM}│{Colors.RESET}     └─ Needs Node.js 22+ (Bird is bundled)           {Colors.DIM}│{Colors.RESET}")
+                lines.append(f"{Colors.DIM}│{Colors.RESET}     └─ Install opencli or set XAI_API_KEY      {Colors.DIM}│{Colors.RESET}")
 
         # YouTube
         if has_youtube:
@@ -507,10 +507,10 @@ def show_diagnostic_banner(diag: dict):
             lines.append("│  ✅ X/Twitter — available                            │")
         else:
             lines.append("│  ❌ X/Twitter — No X auth or fallback key          │")
-            if diag.get("bird_installed"):
-                lines.append("│     └─ Add AUTH_TOKEN/CT0 or XAI_API_KEY           │")
+            if diag.get("opencli_available"):
+                lines.append("│     └─ Check opencli doctor + browser login        │")
             else:
-                lines.append("│     └─ Needs Node.js 22+ (Bird is bundled)           │")
+                lines.append("│     └─ Install opencli or set XAI_API_KEY          │")
 
         if has_youtube:
             lines.append("│  ✅ YouTube   — yt-dlp found                        │")

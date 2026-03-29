@@ -40,7 +40,7 @@ Instagram Reels is now the 8th signal source. TikTok and Instagram both run on S
 
 **New in V2.1:** Open-class skill with watchlists, YouTube transcripts as a source, works in OpenAI Codex CLI. [Full changelog below.](#whats-new-in-v21)
 
-**New in V2:** Smarter query construction, two-phase supplemental search, free X search via bundled Bird client, `--days=N` flag, automatic model fallback. [Full changelog below.](#whats-new-in-v2)
+**New in V2:** Smarter query construction, two-phase supplemental search, unified Reddit/X/Web search via opencli, `--days=N` flag, automatic model fallback. [Full changelog below.](#whats-new-in-v2)
 
 **The tradeoff:** /last30days finds a lot of content but takes 2-8 minutes depending on how niche your topic is. Up to 10 sources searched in parallel, results scored, deduplicated, and synthesized. We think the depth is worth the wait, but `--quick` mode is there if you need speed over thoroughness.
 
@@ -71,9 +71,8 @@ mkdir -p ~/.config/last30days
 cat > ~/.config/last30days/.env << 'EOF'
 SCRAPECREATORS_API_KEY=... # Reddit + TikTok + Instagram (one key, all three) - scrapecreators.com
 OPENAI_API_KEY=sk-...      # optional - legacy Reddit fallback if using `codex login`
-AUTH_TOKEN=...             # recommended for X search - copy once from x.com cookies
-CT0=...                    # recommended for X search - copy once from x.com cookies
-XAI_API_KEY=xai-...        # optional - X fallback if you do not want cookie-based auth
+OPENCLI_CMD=...            # optional - override opencli launch command, e.g. "npx -y @jackwener/opencli"
+XAI_API_KEY=xai-...        # optional - X fallback if opencli is unavailable
 BSKY_HANDLE=you.bsky.social       # optional - Bluesky search (create app password below)
 BSKY_APP_PASSWORD=xxxx-xxxx-xxxx  # optional - bsky.app/settings/app-passwords
 EOF
@@ -86,21 +85,21 @@ For project-specific overrides, create `.claude/last30days.env` in the repo root
 
 ### X Search Authentication
 
-X search prefers explicit env auth. This keeps local runs headless and avoids browser-cookie and macOS Keychain prompts.
+X search now runs through `opencli` by default. Install `opencli`, run `opencli doctor`, and make sure Chrome is logged into `x.com`.
 
 **Recommended setup:**
-1. While logged into x.com once, open browser dev tools and copy the `auth_token` and `ct0` cookies for `x.com`.
-2. Save them as `AUTH_TOKEN` and `CT0` in `~/.config/last30days/.env`, export them in your shell, or add them to `.claude/last30days.env` for a single project.
-3. Re-run `/last30days`.
+1. Install `opencli` globally or let the skill launch it via `npx -y @jackwener/opencli`.
+2. Run `opencli doctor` once and complete the browser bridge setup.
+3. Log into `x.com` in Chrome, then re-run `/last30days`.
 
-**xAI fallback:** If you do not want to provide `AUTH_TOKEN` and `CT0`, set `XAI_API_KEY` and the skill will use xAI's `x_search` backend instead.
+**xAI fallback:** If you do not want to use `opencli`, set `XAI_API_KEY` and the skill will use xAI's `x_search` backend instead.
 
 **Verify it's working:**
 ```bash
-node ~/.claude/skills/last30days/scripts/lib/vendor/bird-search/bird-search.mjs --whoami
+opencli doctor
 ```
 
-**Requirements:** Node.js 22+ (for the vendored Twitter GraphQL client).
+**Requirements:** Node.js 20+ plus a working `opencli` browser bridge.
 
 ### Codex CLI
 
@@ -140,15 +139,15 @@ The open variant adds four modes on top of one-shot research:
 - **Watchlist**  - Track topics with `watch add "topic"`, run manually or via cron
 - **Briefings**  - Daily/weekly digests synthesized from accumulated findings
 - **History**  - Query and search your research database with full-text search
-- **Native web search**  - Built-in web search backends (Parallel AI, Brave, OpenRouter) run alongside Reddit/X/YouTube
+- **Native web search**  - `opencli` web search runs alongside Reddit/X/YouTube, with API backends still available as fallback
 
 Both variants use the same Python engine and scripts directory. The open variant adds command routing (`watch`, `briefing`, `history`) and references mode-specific instruction files.
 
 **Optional web search API keys** (add to `~/.config/last30days/.env`):
 ```bash
-PARALLEL_API_KEY=...    # Parallel AI (preferred  - LLM-optimized results)
+PARALLEL_API_KEY=...    # Parallel AI fallback
 BRAVE_API_KEY=...       # Brave Search (free tier: 2,000 queries/month)
-OPENROUTER_API_KEY=...  # OpenRouter/Perplexity Sonar Pro
+OPENROUTER_API_KEY=...  # OpenRouter/Perplexity Sonar Pro fallback
 ```
 
 **Optional Bluesky credentials** (add to `~/.config/last30days/.env`):
@@ -922,19 +921,19 @@ This example shows /last30days discovering **emerging developer workflows** - re
 | `--debug` | Verbose logging for troubleshooting |
 | `--sources=reddit` | Reddit only |
 | `--sources=x` | X only |
-| `--include-web` | Add native web search alongside Reddit/X (requires web search API key) |
+| `--include-web` | Add native web search alongside Reddit/X (uses opencli when available) |
 | `--store` | Persist findings to SQLite database for watchlist/briefing integration |
-| `--diagnose` | Show source availability diagnostics (API keys, Bird, YouTube, web backends) and exit |
+| `--diagnose` | Show source availability diagnostics (opencli, API keys, YouTube, web backends) and exit |
 
 ## Requirements
 
 - **OpenAI auth** - For Reddit research (uses web search via Responses API). Use `OPENAI_API_KEY` or `codex login`.
-- **Node.js 22+** - For X search (bundled Twitter GraphQL client)
-- **Bundled X auth** - Set `AUTH_TOKEN` and `CT0` for popup-free local X search
-- **Alternate X backend** - Set `XAI_API_KEY` if bundled X auth is not configured
+- **Node.js 20+** - For opencli
+- **opencli** - Preferred path for Reddit/X/Web search
+- **Alternate X backend** - Set `XAI_API_KEY` if opencli is not configured
 - **yt-dlp** (optional) - For YouTube search + transcript extraction. Install via `brew install yt-dlp` or `pip install yt-dlp`. When present, automatically searches YouTube and extracts video transcripts as an additional source.
 
-At least one auth path is required. Reddit needs OpenAI auth. X needs either `AUTH_TOKEN` plus `CT0` or `XAI_API_KEY`. YouTube search activates automatically when yt-dlp is in your PATH.
+At least one auth path is required. Reddit can use opencli or OpenAI auth. X needs either opencli or `XAI_API_KEY`. YouTube search activates automatically when yt-dlp is in your PATH.
 
 ## Troubleshooting
 
@@ -1139,9 +1138,9 @@ Inspired by [Peter Steinberger](https://x.com/steipete)'s yt-dlp + [summarize](h
 
 **Same skill, different host.** Install to `~/.agents/skills/last30days` and invoke with `$last30days` inside Codex. The `agents/openai.yaml` provides Codex-specific discovery metadata. Same SKILL.md, same Python engine, same four sources.
 
-### Bundled X search (v2.1)
+### OpenCLI search (v2.1)
 
-**X search is fully self-contained** - No external `bird` CLI install needed. /last30days bundles a vendored subset of Bird's Twitter GraphQL client (MIT licensed, by Peter Steinberger). With Node.js 22+ plus `AUTH_TOKEN` and `CT0`, it runs locally without browser-cookie prompts. Falls back to xAI API if bundled auth is not configured.
+**Reddit, X, and Web search are now unified through `opencli`**. The skill prefers `opencli` for browser-backed search and keeps xAI plus API web search backends as fallbacks when `opencli` is unavailable.
 
 ### Everything else (v2.1)
 

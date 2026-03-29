@@ -249,6 +249,7 @@ def get_config() -> Dict[str, Any]:
         ('OPENROUTER_API_KEY', None),
         ('PARALLEL_API_KEY', None),
         ('BRAVE_API_KEY', None),
+        ('OPENCLI_CMD', None),
         ('XIAOHONGSHU_API_BASE', None),
         ('GEMINI_MODEL', None),
         ('OPENAI_MODEL_POLICY', 'auto'),
@@ -316,12 +317,14 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 
     Returns: 'all', 'both', 'reddit', 'reddit-web', 'x', 'x-web', 'web', or 'none'
     """
+    from . import opencli
+
     # Reddit is available via public JSON fallback even without OpenAI auth.
     has_reddit = True
-    has_xai = bool(config.get('XAI_API_KEY'))
+    has_x = opencli.is_opencli_available(config.get('OPENCLI_CMD')) or bool(config.get('XAI_API_KEY'))
     has_web = has_web_search_keys(config)
 
-    if has_reddit and has_xai:
+    if has_reddit and has_x:
         return 'all' if has_web else 'both'
     elif has_reddit:
         return 'reddit-web' if has_web else 'reddit'
@@ -330,16 +333,27 @@ def get_available_sources(config: Dict[str, Any]) -> str:
 
 def has_web_search_keys(config: Dict[str, Any]) -> bool:
     """Check if any web search API keys are configured."""
-    return bool(config.get('OPENROUTER_API_KEY') or config.get('PARALLEL_API_KEY') or config.get('BRAVE_API_KEY'))
+    from . import opencli
+
+    return bool(
+        opencli.is_opencli_available(config.get('OPENCLI_CMD'))
+        or config.get('OPENROUTER_API_KEY')
+        or config.get('PARALLEL_API_KEY')
+        or config.get('BRAVE_API_KEY')
+    )
 
 
 def get_web_search_source(config: Dict[str, Any]) -> Optional[str]:
     """Determine the best available web search backend.
 
-    Priority: Parallel AI > Brave > OpenRouter/Sonar Pro
+    Priority: opencli > Parallel AI > Brave > OpenRouter/Sonar Pro
 
-    Returns: 'parallel', 'brave', 'openrouter', or None
+    Returns: 'opencli', 'parallel', 'brave', 'openrouter', or None
     """
+    from . import opencli
+
+    if opencli.is_opencli_available(config.get('OPENCLI_CMD')):
+        return 'opencli'
     if config.get('PARALLEL_API_KEY'):
         return 'parallel'
     if config.get('BRAVE_API_KEY'):
@@ -350,19 +364,15 @@ def get_web_search_source(config: Dict[str, Any]) -> Optional[str]:
 
 
 def get_missing_keys(config: Dict[str, Any]) -> str:
-    """Determine which sources are missing (accounting for Bird).
+    """Determine which sources are missing (accounting for opencli).
 
     Returns: 'all', 'both', 'reddit', 'x', 'web', or 'none'
     """
+    from . import opencli
+
     has_reddit = True
-    has_xai = bool(config.get('XAI_API_KEY'))
+    has_x = opencli.is_opencli_available(config.get('OPENCLI_CMD')) or bool(config.get('XAI_API_KEY'))
     has_web = has_web_search_keys(config)
-
-    # Check if Bird provides X access (import here to avoid circular dependency)
-    from . import bird_x
-    has_bird = bird_x.is_bird_installed() and bird_x.is_bird_authenticated()
-
-    has_x = has_xai or has_bird
 
     if has_reddit and has_x and has_web:
         return 'none'
@@ -430,7 +440,7 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
 
     if requested == 'x':
         if not has_x:
-            return 'none', "Requested X but no X source is available (need Bird auth or XAI_API_KEY)."
+            return 'none', "Requested X but no X source is available (need opencli or XAI_API_KEY)."
         if include_web:
             return 'x-web', None
         return 'x', None
@@ -441,26 +451,20 @@ def validate_sources(requested: str, available: str, include_web: bool = False) 
 def get_x_source(config: Dict[str, Any]) -> Optional[str]:
     """Determine the best available X/Twitter source.
 
-    Priority: Bird (free) → xAI (paid API)
-
-    Keep X selection limited to documented, verified search backends.
+    Priority: opencli → xAI (paid API)
 
     Args:
         config: Configuration dict from get_config()
 
     Returns:
-        'bird' if Bird is installed and authenticated,
+        'opencli' if opencli is available,
         'xai' if XAI_API_KEY is configured,
         None if no X source available.
     """
-    # Import here to avoid circular dependency
-    from . import bird_x
+    from . import opencli
 
-    # Check Bird first (free option)
-    if bird_x.is_bird_installed():
-        username = bird_x.is_bird_authenticated()
-        if username:
-            return 'bird'
+    if opencli.is_opencli_available(config.get('OPENCLI_CMD')):
+        return 'opencli'
 
     # Fall back to xAI if key exists
     if config.get('XAI_API_KEY'):
@@ -576,17 +580,16 @@ def get_x_source_status(config: Dict[str, Any]) -> Dict[str, Any]:
     """Get detailed X source status for UI decisions.
 
     Returns:
-        Dict with keys: source, bird_installed, bird_authenticated,
-        bird_username, xai_available, can_install_bird
+        Dict with keys: source, opencli_available, opencli_command, xai_available
     """
-    from . import bird_x
+    from . import opencli
 
-    bird_status = bird_x.get_bird_status()
+    opencli_status = opencli.get_opencli_status(config.get('OPENCLI_CMD'))
     xai_available = bool(config.get('XAI_API_KEY'))
 
     # Determine active source
-    if bird_status["authenticated"]:
-        source = 'bird'
+    if opencli_status["available"]:
+        source = 'opencli'
     elif xai_available:
         source = 'xai'
     else:
@@ -594,9 +597,11 @@ def get_x_source_status(config: Dict[str, Any]) -> Dict[str, Any]:
 
     return {
         "source": source,
-        "bird_installed": bird_status["installed"],
-        "bird_authenticated": bird_status["authenticated"],
-        "bird_username": bird_status["username"],
+        "opencli_available": opencli_status["available"],
+        "opencli_command": opencli_status["command"],
+        "bird_installed": False,
+        "bird_authenticated": False,
+        "bird_username": None,
         "xai_available": xai_available,
-        "can_install_bird": bird_status["can_install"],
+        "can_install_bird": False,
     }

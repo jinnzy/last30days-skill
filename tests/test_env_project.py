@@ -211,23 +211,34 @@ class TestXSourceSelection(unittest.TestCase):
     def test_get_x_source_ignores_scrapecreators_key(self):
         config = {'SCRAPECREATORS_API_KEY': 'sc-key'}
 
-        with patch('lib.bird_x.is_bird_installed', return_value=False):
+        with patch('lib.opencli.is_opencli_available', return_value=False):
             self.assertIsNone(env.get_x_source(config))
+
+    def test_get_x_source_prefers_opencli(self):
+        config = {'XAI_API_KEY': 'xai-key', 'OPENCLI_CMD': 'opencli'}
+
+        with patch('lib.opencli.is_opencli_available', return_value=True):
+            self.assertEqual(env.get_x_source(config), 'opencli')
 
     def test_get_x_source_status_ignores_scrapecreators_key(self):
         config = {'SCRAPECREATORS_API_KEY': 'sc-key'}
-        bird_status = {
-            'installed': True,
-            'authenticated': False,
-            'username': None,
-            'can_install': False,
-        }
 
-        with patch('lib.bird_x.get_bird_status', return_value=bird_status):
+        with patch('lib.opencli.get_opencli_status', return_value={'available': False, 'command': None}):
             status = env.get_x_source_status(config)
 
         self.assertIsNone(status['source'])
         self.assertFalse(status['xai_available'])
+
+    def test_get_web_search_source_prefers_opencli(self):
+        config = {
+            'OPENCLI_CMD': 'opencli',
+            'PARALLEL_API_KEY': 'parallel',
+            'BRAVE_API_KEY': 'brave',
+            'OPENROUTER_API_KEY': 'openrouter',
+        }
+
+        with patch('lib.opencli.is_opencli_available', return_value=True):
+            self.assertEqual(env.get_web_search_source(config), 'opencli')
 
 
 if __name__ == "__main__":

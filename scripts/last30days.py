@@ -134,7 +134,6 @@ def _install_global_timeout(timeout_seconds: int):
         timer.start()
 
 from lib import (
-    bird_x,
     bluesky,
     truthsocial,
     dates,
@@ -147,13 +146,13 @@ from lib import (
     http,
     models,
     normalize,
+    opencli,
     openai_reddit,
     reddit,
     reddit_enrich,
     render,
     schema,
     score,
-    scrapecreators_x,
     ui,
     tiktok,
     instagram,
@@ -193,6 +192,23 @@ def _search_reddit(
     raw_response = None
     reddit_error = None
     used_scrapecreators = False
+
+    if not mock and opencli.is_opencli_available(config.get("OPENCLI_CMD")):
+        try:
+            sys.stderr.write("[Reddit] Using opencli\n")
+            sys.stderr.flush()
+            raw_response = opencli.search_reddit(
+                topic, from_date, to_date, depth=depth, command=config.get("OPENCLI_CMD"),
+            )
+            reddit_items = raw_response.get("items", [])
+            if raw_response.get("error"):
+                reddit_error = raw_response["error"]
+            if reddit_items or reddit_error:
+                return reddit_items, raw_response, reddit_error, used_scrapecreators
+        except Exception as e:
+            reddit_error = f"opencli: {type(e).__name__}: {e}"
+            sys.stderr.write(f"[Reddit] opencli failed: {e}\n")
+            sys.stderr.flush()
 
     sc_token = config.get("SCRAPECREATORS_API_KEY")
 
@@ -324,10 +340,10 @@ def _search_x(
     mock: bool,
     x_source: str = "xai",
 ) -> tuple:
-    """Search X via Bird CLI or xAI (runs in thread).
+    """Search X via opencli or xAI (runs in thread).
 
     Args:
-        x_source: 'bird' or 'xai' - which backend to use
+        x_source: 'opencli' or 'xai' - which backend to use
 
     Returns:
         Tuple of (x_items, raw_response, error)
@@ -340,45 +356,30 @@ def _search_x(
         x_items = xai_x.parse_x_response(raw_response or {})
         return x_items, raw_response, x_error
 
-    # Use Bird if specified
-    if x_source == "bird":
+    if x_source == "opencli":
         try:
-            raw_response = bird_x.search_x(
+            raw_response = opencli.search_x(
                 topic,
                 from_date,
                 to_date,
                 depth=depth,
+                command=config.get("OPENCLI_CMD"),
             )
         except Exception as e:
             raw_response = {"error": str(e)}
             x_error = f"{type(e).__name__}: {e}"
 
-        x_items = bird_x.parse_bird_response(raw_response or {}, query=topic)
-
-        # Check for error in response (Bird returns list on success, dict on error)
+        x_items = raw_response.get("items", []) if isinstance(raw_response, dict) else []
         if raw_response and isinstance(raw_response, dict) and raw_response.get("error") and not x_error:
             x_error = raw_response["error"]
 
-        return x_items, raw_response, x_error
+        if x_items or not config.get("XAI_API_KEY"):
+            return x_items, raw_response, x_error
 
-    # Use ScrapeCreators if specified
-    if x_source == "scrapecreators":
-        try:
-            raw_response = scrapecreators_x.search_x(
-                topic, from_date, to_date,
-                depth=depth,
-                token=config.get("SCRAPECREATORS_API_KEY"),
-            )
-        except Exception as e:
-            raw_response = {"error": str(e)}
-            x_error = f"{type(e).__name__}: {e}"
-
-        x_items = scrapecreators_x.parse_x_response(raw_response or {})
-
-        if raw_response and isinstance(raw_response, dict) and raw_response.get("error") and not x_error:
-            x_error = raw_response["error"]
-
-        return x_items, raw_response, x_error
+        sys.stderr.write(f"[X] opencli failed, falling back to xAI: {x_error}\n")
+        sys.stderr.flush()
+        raw_response = None
+        x_error = None
 
     # Use xAI (original behavior)
     try:
@@ -611,7 +612,7 @@ def _search_web(
 ) -> tuple:
     """Search the web via native API backend (runs in thread).
 
-    Uses the best available backend: Parallel AI > Brave > OpenRouter.
+    Uses the best available backend: opencli > Parallel AI > Brave > OpenRouter.
 
     Returns:
         Tuple of (web_items, web_error)
@@ -623,26 +624,47 @@ def _search_web(
     if not backend:
         return [], "No web search API keys configured"
 
+    candidates = [backend]
+    if config.get("PARALLEL_API_KEY") and "parallel" not in candidates:
+        candidates.append("parallel")
+    if config.get("BRAVE_API_KEY") and "brave" not in candidates:
+        candidates.append("brave")
+    if config.get("OPENROUTER_API_KEY") and "openrouter" not in candidates:
+        candidates.append("openrouter")
+
     web_error = None
     raw_results = []
 
-    try:
-        if backend == "parallel":
-            raw_results = parallel_search.search_web(
-                topic, from_date, to_date, config["PARALLEL_API_KEY"], depth=depth,
-            )
-        elif backend == "brave":
-            use_llm_ctx = os.environ.get("BRAVE_LLM_CONTEXT", "").strip() == "1"
-            raw_results = brave_search.search_web(
-                topic, from_date, to_date, config["BRAVE_API_KEY"],
-                depth=depth, use_llm_context=use_llm_ctx,
-            )
-        elif backend == "openrouter":
-            raw_results = openrouter_search.search_web(
-                topic, from_date, to_date, config["OPENROUTER_API_KEY"], depth=depth,
-            )
-    except Exception as e:
-        return [], f"{type(e).__name__}: {e}"
+    for candidate in candidates:
+        try:
+            if candidate == "opencli":
+                raw_results = opencli.search_web(
+                    topic, from_date, to_date, depth=depth, command=config.get("OPENCLI_CMD"),
+                ).get("items", [])
+            elif candidate == "parallel":
+                raw_results = parallel_search.search_web(
+                    topic, from_date, to_date, config["PARALLEL_API_KEY"], depth=depth,
+                )
+            elif candidate == "brave":
+                use_llm_ctx = os.environ.get("BRAVE_LLM_CONTEXT", "").strip() == "1"
+                raw_results = brave_search.search_web(
+                    topic, from_date, to_date, config["BRAVE_API_KEY"],
+                    depth=depth, use_llm_context=use_llm_ctx,
+                )
+            elif candidate == "openrouter":
+                raw_results = openrouter_search.search_web(
+                    topic, from_date, to_date, config["OPENROUTER_API_KEY"], depth=depth,
+                )
+            web_error = None
+            break
+        except Exception as e:
+            web_error = f"{type(e).__name__}: {e}"
+            sys.stderr.write(f"[Web] {candidate} failed: {web_error}\n")
+            sys.stderr.flush()
+            raw_results = []
+
+    if web_error and not raw_results:
+        return [], web_error
 
     # Add IDs and date_confidence for websearch.normalize_websearch_items()
     for i, item in enumerate(raw_results):
@@ -722,7 +744,7 @@ def _run_supplemental(
         from_date: Start date
         to_date: End date
         depth: Research depth
-        x_source: 'bird' or 'xai'
+        x_source: 'opencli' or 'xai'
         progress: Optional progress display
         skip_reddit: If True, skip Reddit supplemental (e.g. rate-limited)
         resolved_handle: X handle resolved by the agent (without @), searched unfiltered
@@ -747,7 +769,7 @@ def _run_supplemental(
         max_subreddits=max_subs,
     )
 
-    has_handles = entities["x_handles"] and x_source == "bird"
+    has_handles = entities["x_handles"] and x_source == "opencli"
     has_subs = entities["reddit_subreddits"] and not skip_reddit
 
     # Always run unfiltered search for resolved handle (even if entity-extracted).
@@ -755,7 +777,7 @@ def _run_supplemental(
     # but resolved handles need UNFILTERED search (from:handle) to find posts
     # that don't mention the topic string (e.g. Dor Brothers' viral tweet about
     # Logan Paul doesn't contain "dor brothers" in the text).
-    has_resolved = bool(resolved_handle) and x_source == "bird"
+    has_resolved = bool(resolved_handle) and x_source == "opencli"
 
     if not has_handles and not has_subs and not has_resolved:
         return [], []
@@ -799,21 +821,23 @@ def _run_supplemental(
 
         if has_handles:
             x_future = executor.submit(
-                bird_x.search_handles,
+                opencli.search_x_handles,
                 entities["x_handles"],
                 topic,
                 from_date,
                 count_per,
+                config.get("OPENCLI_CMD"),
             )
 
         if has_resolved:
             # Resolved handle: search unfiltered (topic=None) to get all recent posts
             resolved_future = executor.submit(
-                bird_x.search_handles,
+                opencli.search_x_handles,
                 [resolved_handle],
                 None,  # No topic filter - get all recent activity
                 from_date,
                 10,  # More results for the topic entity
+                config.get("OPENCLI_CMD"),
             )
 
         if reddit_future:
@@ -1537,12 +1561,9 @@ def main():
     # Load config
     config = env.get_config()
 
-    # Inject .env credentials into Bird module before auth check
-    bird_x.set_credentials(config.get('AUTH_TOKEN'), config.get('CT0'))
-
-    # Auto-detect Bird (no prompts - just use it if available)
+    # Auto-detect opencli (preferred) or xAI fallback
     x_source_status = env.get_x_source_status(config)
-    x_source = x_source_status["source"]  # 'bird', 'xai', or None
+    x_source = x_source_status["source"]  # 'opencli', 'xai', or None
 
     # Auto-detect yt-dlp for YouTube search
     has_ytdlp = env.is_ytdlp_available()
@@ -1570,6 +1591,8 @@ def main():
             "reddit_public": True,
             "xai": bool(config.get("XAI_API_KEY")),
             "x_source": x_source_status["source"],
+            "opencli_available": x_source_status.get("opencli_available"),
+            "opencli_command": x_source_status.get("opencli_command"),
             "bird_installed": x_source_status["bird_installed"],
             "bird_authenticated": x_source_status["bird_authenticated"],
             "bird_username": x_source_status.get("bird_username"),
@@ -1606,6 +1629,8 @@ def main():
         "reddit_public": True,
         "xai": bool(config.get("XAI_API_KEY")),
         "x_source": x_source_status["source"],
+        "opencli_available": x_source_status.get("opencli_available"),
+        "opencli_command": x_source_status.get("opencli_command"),
         "bird_installed": x_source_status["bird_installed"],
         "bird_authenticated": x_source_status["bird_authenticated"],
         "bird_username": x_source_status.get("bird_username"),
@@ -1621,11 +1646,11 @@ def main():
     }
     ui.show_diagnostic_banner(diag)
 
-    # Check available sources (accounting for Bird auto-detection)
+    # Check available sources (accounting for opencli auto-detection)
     available = env.get_available_sources(config)
 
-    # Override available if Bird provides X
-    if x_source == 'bird':
+    # Override available if opencli provides X
+    if x_source == 'opencli':
         if available == 'reddit':
             available = 'both'  # Now have both Reddit + X
         elif available == 'reddit-web':
@@ -1893,10 +1918,10 @@ def main():
     # Build source info for status footer
     source_info = {}
     if not x_source:
-        if x_source_status["bird_installed"]:
-            source_info["x_skip_reason"] = "Bird installed but not authenticated — log into x.com in browser"
+        if x_source_status.get("opencli_available"):
+            source_info["x_skip_reason"] = "opencli is available but X search is not configured correctly"
         else:
-            source_info["x_skip_reason"] = "No Bird CLI, XAI_API_KEY, or SCRAPECREATORS_API_KEY"
+            source_info["x_skip_reason"] = "No opencli or XAI_API_KEY"
     if not has_ytdlp:
         source_info["youtube_skip_reason"] = "yt-dlp not installed — fix: brew install yt-dlp"
     elif has_ytdlp and not report.youtube:
@@ -1911,7 +1936,7 @@ def main():
             f"(base: {env.get_xiaohongshu_api_base(config)})"
         )
     if not web_source:
-        source_info["web_skip_reason"] = "assistant will use WebSearch (add BRAVE_API_KEY for native search)"
+        source_info["web_skip_reason"] = "assistant will use WebSearch (or install/configure opencli)"
 
     # Output result
     output_result(report, args.emit, web_needed, args.topic, from_date, to_date, missing_keys, args.days, source_info)

@@ -565,7 +565,7 @@ def render_source_status(report: schema.Report, source_info: dict = None) -> str
     elif report.mode in ("both", "x-only", "all", "x-web"):
         pass  # Hide zero-result sources
     else:
-        reason = source_info.get("x_skip_reason", "No Bird CLI or XAI_API_KEY")
+        reason = source_info.get("x_skip_reason", "No opencli or XAI_API_KEY")
         lines.append(f"  ⏭️ X: skipped — {reason}")
 
     # YouTube
@@ -640,7 +640,7 @@ def render_source_status(report: schema.Report, source_info: dict = None) -> str
     elif report.web:
         lines.append(f"  ✅ Web: {len(report.web)} pages")
     else:
-        reason = source_info.get("web_skip_reason", "assistant will use WebSearch")
+        reason = source_info.get("web_skip_reason", "assistant will use WebSearch or opencli")
         lines.append(f"  ⚡ Web: {reason}")
 
     lines.append("")
